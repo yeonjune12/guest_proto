@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Hamburger Tycoon - Prototype</title>
+<style>
+  :root{
+    --bg:#0f1115;--panel:#171a21;--line:#2b3242;--text:#e6e9ef;--muted:#9aa3b2;
+    --ok:#4cd137;--warn:#f39c12;--bad:#e74c3c;--trash:#3498db;--accent:#7cd1ff;
+  }
+  *{box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--text)}
+  .wrap{max-width:980px;margin:16px auto;padding:12px}
+  .topbar{
+    display:flex;justify-content:space-between;align-items:center;
+    background:var(--panel);border:1px solid var(--line);padding:10px 14px;border-radius:10px;
+  }
+  .menu{display:flex;gap:8px;align-items:center;font-weight:600}
+  .pill{border:1px solid var(--line);padding:6px 10px;border-radius:999px;background:#111520}
+  .clock{font-variant-numeric:tabular-nums;color:var(--muted)}
+  .stage{
+    position:relative;margin-top:12px;height:560px;border:2px solid var(--line);
+    border-radius:14px;background:linear-gradient(#0d1016,#101521);
+    overflow:hidden;
+  }
+  /* 가게 맵: 세로 직사각형 */
+  .shop{
+    position:absolute;inset:12px 36% 12px 36%; /* 세로 평면 */
+    border:2px dashed #2a3345;border-radius:12px;background:rgba(124,209,255,0.04)
+  }
+  /* 카운터 */
+  .counter{
+    position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
+    width:62%;height:70px;border-radius:10px;background:#1c2330;border:2px solid #2c3a55;
+    box-shadow:0 8px 0 #0c111d inset;
+  }
+  .counter::after{
+    content:"카운터";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    color:#94a3b8;font-weight:700;letter-spacing:.1em;font-size:12px;
+  }
+  /* 입구 마크 */
+  .entrance{
+    position:absolute;left:50%;bottom:10px;transform:translateX(-50%);
+    width:120px;height:10px;border-radius:6px;background:#2c3a55;
+  }
+  .entrance::after{
+    content:"입구";position:absolute;left:50%;top:-16px;transform:translateX(-50%);
+    color:#94a3b8;font-size:12px
+  }
+  /* 플레이어(점원) */
+  .player{
+    position:absolute;left:50%;top:38%;transform:translate(-50%,-120%);
+    width:22px;height:22px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px #0c111d;
+  }
+
+  /* 엔티티 공통 */
+  .dot{position:absolute;width:22px;height:22px;border-radius:50%;box-shadow:0 0 0 2px #0c111d;cursor:pointer}
+  .cust-normal{background:var(--warn)}
+  .cust-rude{background:var(--bad)}
+  .trash{background:var(--trash);cursor:pointer}
+  .hidden{display:none}
+
+  /* 게이지 */
+  .gauge{
+    position:absolute;width:12px;height:56px;border-radius:8px;border:1px solid #2c3a55;
+    background:#0c111a;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;padding:3px
+  }
+  .gauge .cell{width:100%;height:0;transition:height .18s;background:var(--ok);border-radius:4px}
+
+  /* 팝업 */
+  .modal-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:30
+  }
+  .modal{
+    width:320px;max-width:96vw;background:#0f141f;border:1px solid #2b3853;border-radius:12px;padding:14px;
+    box-shadow:0 20px 80px rgba(0,0,0,.45)
+  }
+  .modal h3{margin:0 0 8px 0;font-size:16px}
+  .row{display:flex;gap:8px}
+  .btn{
+    flex:1;background:#111827;border:1px solid #334155;color:#e5e7eb;padding:10px;border-radius:10px;cursor:pointer;
+  }
+  .btn:hover{border-color:#7899ff}
+  .btn.primary{background:#172554;border-color:#3b82f6}
+  .note{color:#9aa3b2;font-size:12px;margin-top:6px}
+
+  /* 시작 버튼만 큰 화면 중앙 */
+  .start-overlay{position:fixed;inset:0;background:rgba(2,6,16,.78);display:flex;align-items:center;justify-content:center;z-index:40}
+  .start-card{background:#0d1320;border:1px solid #2b3853;border-radius:14px;padding:18px 20px;width:360px;max-width:90vw}
+  .start-card h2{margin:0 0 8px 0}
+  .start-card p{margin:0 0 12px 0;color:#9aa3b2}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="menu">
+        <span>메뉴:</span>
+        <span class="pill">불고기 버거</span>
+        <span class="pill">치킨 버거</span>
+      </div>
+      <div class="clock" id="clock">00:00:00</div>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="shop"></div>
+      <div class="counter" id="counter"></div>
+      <div class="entrance" id="entrance"></div>
+      <div class="player" title="점원"></div>
+    </div>
+  </div>
+
+  <!-- 시작 오버레이 -->
+  <div class="start-overlay" id="startOverlay">
+    <div class="start-card">
+      <h2>게임 시작</h2>
+      <p>간단 조작 프로토타입. 손님 상호작용과 진상 처리 흐름만 포함.</p>
+      <button class="btn primary" id="btnStart">시작</button>
+    </div>
+  </div>
+
+  <!-- 주문 팝업 -->
+  <div class="modal-backdrop hidden" id="orderModal">
+    <div class="modal">
+      <h3 id="orderTitle">손님 주문</h3>
+      <div class="row">
+        <button class="btn" id="btnA">불고기 버거</button>
+        <button class="btn" id="btnB">치킨 버거</button>
+      </div>
+      <div class="note">표시된 메뉴를 클릭하면 손님이 퇴장.</div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const counter = document.getElementById('counter');
+  const entrance = document.getElementById('entrance');
+  const startOverlay = document.getElementById('startOverlay');
+  const btnStart = document.getElementById('btnStart');
+  const orderModal = document.getElementById('orderModal');
+  const btnA = document.getElementById('btnA');
+  const btnB = document.getElementById('btnB');
+  const clockEl = document.getElementById('clock');
+
+  // 시간 표시
+  setInterval(() => {
+    const d = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    clockEl.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }, 500);
+
+  // 좌표 헬퍼
+  const stageRect = () => stage.getBoundingClientRect();
+  const posEntrance = () => {
+    const s = stageRect();
+    const e = entrance.getBoundingClientRect();
+    return { x: e.left - s.left + e.width/2, y: e.top - s.top - 4 }; // 위쪽 가장자리에서 시작
+  };
+  const posCounterFront = () => {
+    const s = stageRect();
+    const c = counter.getBoundingClientRect();
+    return { x: c.left - s.left + c.width/2, y: c.top - s.top + c.height + 8 };
+  };
+
+  // 전역 상태
+  let gameStarted = false;
+  let busy = false;                 // 카운터 점유
+  let activeCustomer = null;        // 현재 처리중 손님
+  let orderTarget = null;           // 주문 대기 손님
+  const trashSet = new Set();       // 맵에 존재하는 쓰레기
+
+  // 유틸
+  const rnd = (n=1)=>Math.random()<n;
+  const wait = ms => new Promise(r=>setTimeout(r,ms));
+
+  class Customer {
+    constructor(kind){ // 'normal' | 'rude'
+      this.kind = kind;
+      this.el = document.createElement('div');
+      this.el.className = `dot ${kind==='rude'?'cust-rude':'cust-normal'}`;
+      stage.appendChild(this.el);
+
+      const p0 = posEntrance();
+      this.x = p0.x - 11; this.y = p0.y - 11;
+      this.el.style.left = `${this.x}px`;
+      this.el.style.top  = `${this.y}px`;
+
+      this.speed = 110; // px/s
+      this.state = 'moving'; // moving | waiting | leaving
+      this.dropped = false;
+      this.boundClick = () => this.onClick();
+      this.el.addEventListener('click', this.boundClick);
+      this.animate();
+    }
+
+    async animate(){
+      const target = posCounterFront();
+      const startY = this.y;
+      const distance = (target.y - this.y);
+      const start = performance.now();
+      let droppedCheck = false;
+
+      const step = (now) => {
+        if(this.state!=='moving') return;
+        const t = (now - start)/1000;
+        const dy = this.speed * t;
+        this.y = startY + Math.min(dy, distance);
+        this.el.style.top = `${this.y}px`;
+
+        // 진행도
+        const progress = (this.y - startY) / Math.max(distance,1);
+
+        // 쓰레기 드랍: 진상만, 한 번만, 1/3 확률, 진행도 0.25~0.75 사이
+        if(this.kind==='rude' && !this.dropped && !droppedCheck && progress>0.35){
+          droppedCheck = true;
+          if(rnd(1/3)) this.dropTrash();
+        }
+
+        // 쓰레기가 있으면 일반 손님은 이동 중에 사라짐
+        if(this.kind==='normal' && trashSet.size>0){
+          this.vanish();
+          return;
+        }
+
+        if(dy < distance){
+          requestAnimationFrame(step);
+        }else{
+          this.arriveCounter();
+        }
+      };
+      requestAnimationFrame(step);
+    }
+
+    dropTrash(){
+      this.dropped = true;
+      const t = document.createElement('div');
+      t.className = 'dot trash';
+      t.title = '쓰레기';
+      t.style.left = `${this.x + (Math.random()*60-30)}px`;
+      t.style.top  = `${this.y + 26}px`;
+      stage.appendChild(t);
+      trashSet.add(t);
+      t.addEventListener('click', () => {
+        t.remove(); trashSet.delete(t);
+      });
+    }
+
+    arriveCounter(){
+      if(this.state!=='moving') return;
+      this.state='waiting';
+      activeCustomer = this;
+
+      if(this.kind==='rude'){
+        this.showGauge();
+      }else{
+        this.openOrder();
+      }
+    }
+
+    showGauge(){
+      // 게이지 박스 생성
+      this.gauge = document.createElement('div');
+      this.gauge.className='gauge';
+      stage.appendChild(this.gauge);
+      // 위치: 손님 우측
+      const updatePos = () => {
+        this.gauge.style.left = `${this.x + 26}px`;
+        this.gauge.style.top  = `${this.y - 16}px`;
+      };
+      updatePos();
+
+      // 3번 클릭으로 채움
+      this.charge = 0;
+      this.gaugeCells = [0,1,2].map(()=> {
+        const c = document.createElement('div'); c.className='cell'; this.gauge.appendChild(c); return c;
+      });
+
+      const onGaugeClick = () => {
+        this.charge = Math.min(3, this.charge+1);
+        const h = ['18%','50%','100%'];
+        this.gaugeCells.forEach((c,i)=> c.style.height = i < this.charge ? h[i] : '0');
+        if(this.charge>=3){
+          // 진상 -> 일반 전환
+          this.kind='normal';
+          this.el.classList.remove('cust-rude'); this.el.classList.add('cust-normal');
+          this.gauge.remove();
+          this.openOrder();
+        }
+      };
+      // 게이지 자체 클릭 처리
+      this.gauge.addEventListener('click', onGaugeClick);
+      // 손님 원 자체 클릭도 동일 처리
+      this.el.addEventListener('click', onGaugeClick);
+    }
+
+    openOrder(){
+      if(this.state!=='waiting') return;
+      // 50% 확률 메뉴 선택
+      const menu = rnd(0.5) ? '불고기 버거' : '치킨 버거';
+      btnA.textContent = '불고기 버거';
+      btnB.textContent = '치킨 버거';
+
+      // 표기된 메뉴만 정답
+      [btnA, btnB].forEach(btn=>{
+        btn.classList.remove('primary');
+        if(btn.textContent===menu) btn.classList.add('primary');
+      });
+
+      orderTarget = this;
+      orderModal.classList.remove('hidden');
+    }
+
+    onClick(){
+      if(this.state==='waiting' && this.kind==='normal'){
+        this.openOrder();
+      }
+    }
+
+    async leave(){
+      this.state='leaving';
+      // 아래로 이동해 퇴장
+      const s = stageRect();
+      const targetY = s.height + 30;
+      const startY = this.y;
+      const start = performance.now();
+
+      const step = (now) => {
+        if(this.state!=='leaving') return;
+        const t = (now - start)/1000;
+        this.y = startY + this.speed * t;
+        this.el.style.top = `${this.y}px`;
+        if(this.y < targetY) requestAnimationFrame(step);
+        else this.destroy();
+      };
+      requestAnimationFrame(step);
+    }
+
+    vanish(){
+      this.state='vanished';
+      this.el.remove();
+      this.cleanup();
+      // 다음 손님 예약
+      scheduleNext();
+    }
+
+    destroy(){
+      this.el.remove();
+      this.cleanup();
+      scheduleNext();
+    }
+
+    cleanup(){
+      if(this.gauge) this.gauge.remove();
+      if(activeCustomer===this) activeCustomer=null;
+      if(orderTarget===this) orderTarget=null;
+    }
+  }
+
+  // 주문 처리
+  function bindOrderButtons(){
+    const clickHandler = (e)=>{
+      if(!orderTarget) return;
+      const need = [...e.target.classList].includes('primary'); // 정답만 허용
+      if(need){
+        orderModal.classList.add('hidden');
+        orderTarget.leave();
+        orderTarget = null;
+      }
+    };
+    btnA.addEventListener('click', clickHandler);
+    btnB.addEventListener('click', clickHandler);
+    orderModal.addEventListener('click', (e)=>{ if(e.target===orderModal) orderModal.classList.add('hidden'); });
+  }
+
+  // 스폰 제어: 한 번에 한 명. 처리되면 다음 생성.
+  async function scheduleNext(){
+    if(!gameStarted) return;
+    await wait(600); // 짧은 텀
+    spawnCustomer();
+  }
+
+  function spawnCustomer(){
+    if(activeCustomer) return; // 카운터 대기 중인 손님이 있으면 대기
+    const kind = rnd(0.35) ? 'rude' : 'normal'; // 진상 확률 35%
+    new Customer(kind);
+  }
+
+  // 시작
+  btnStart.addEventListener('click', ()=>{
+    startOverlay.remove();
+    gameStarted = true;
+    spawnCustomer();
+  });
+
+  bindOrderButtons();
+})();
+</script>
+</body>
+</html>
