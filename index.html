@@ -51,13 +51,13 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
     <div class="entrance" data-lane="0"></div>
     <div class="entrance" data-lane="1"></div>
     <div class="entrance" data-lane="2"></div>
-    <div class="player" title="플레이어"></div>
+    <div class="player"></div>
   </div>
 
   <div class="overlay" id="startOverlay">
     <div class="modal">
       <h2>게임 시작</h2>
-      <p>3개 줄 대기열. 주문은 먼저 도착한 손님부터.</p>
+      <p>세 줄 손님이 순차적으로 등장합니다.</p>
       <button class="btn primary" id="startBtn">게임 시작</button>
     </div>
   </div>
@@ -73,11 +73,9 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
   </div>
 
 <script>
-/* 시계 */
-const clockEl = document.getElementById('clock');
+const clockEl=document.getElementById('clock');
 setInterval(()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');clockEl.textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;},1000);
 
-/* 참조 */
 const stage=document.getElementById('stage');
 const counter=document.getElementById('counter');
 const entrances=[...document.querySelectorAll('.entrance')];
@@ -87,22 +85,21 @@ const orderOverlay=document.getElementById('orderOverlay');
 const orderText=document.getElementById('orderText');
 const orderConfirm=document.getElementById('orderConfirm');
 
-/* 좌표 */
 function getCenter(el){const r=el.getBoundingClientRect(),s=stage.getBoundingClientRect();return{x:r.left-s.left+r.width/2,y:r.top-s.top+r.height/2};}
 
-/* 주문 큐 */
-const waitingQueue=[];
-let showing=null;
+const waitingQueue=[];let showing=null;
+
 function tryShowNextOrder(){
-  if(showing||waitingQueue.length===0) return;
+  if(showing||waitingQueue.length===0)return;
   const item=waitingQueue.shift();
   showing=item;
   orderText.textContent=`손님이 ${item.burger}를 주문했다. 클릭하여 전달.`;
   orderConfirm.textContent=item.burger;
   orderOverlay.classList.remove('hide');
 }
+
 orderConfirm.addEventListener('click',()=>{
-  if(!showing) return;
+  if(!showing)return;
   orderOverlay.classList.add('hide');
   const {custEl,lane}=showing;
   const ent=getCenter(entrances[lane]);
@@ -113,13 +110,12 @@ orderConfirm.addEventListener('click',()=>{
   custEl.addEventListener('transitionend',function rm(){
     custEl.removeEventListener('transitionend',rm);
     custEl.remove();
-    spawnCustomer(lane);     // 같은 줄 재스폰
+    spawnCustomer(lane); // 같은 라인 리스폰
     showing=null;
-    tryShowNextOrder();      // 다음 주문 표시
+    tryShowNextOrder();
   },{once:true});
 });
 
-/* 손님 생성 */
 function spawnCustomer(lane){
   const cust=document.createElement('div');
   cust.className='customer';
@@ -134,10 +130,11 @@ function spawnCustomer(lane){
   const xOffsets=[-90,0,90];
   const target={x:tgtBase.x+xOffsets[lane],y:tgtBase.y+yOffset};
 
-  requestAnimationFrame(()=>{
+  // 이동은 한 프레임 뒤에 시작 (브라우저 레이아웃 보장)
+  requestAnimationFrame(()=>{requestAnimationFrame(()=>{
     cust.style.left=(target.x-10)+'px';
     cust.style.top =(target.y-10)+'px';
-  });
+  });});
 
   cust.addEventListener('transitionend',function arrived(){
     cust.removeEventListener('transitionend',arrived);
@@ -145,21 +142,21 @@ function spawnCustomer(lane){
     waitingQueue.push({custEl:cust,lane,burger});
     tryShowNextOrder();
   },{once:true});
-
   return cust;
 }
 
-/* 초기 3줄 시퀀스: 이동시간 2초 → 반도달 1초 타이머로 스폰 */
+// 초기 3줄 시퀀스
 function startThreeLaneSequence(){
-  spawnCustomer(1);                 // 두 번째 줄 먼저
-  setTimeout(()=>spawnCustomer(0),1000); // 1초 후 첫 번째 줄
-  setTimeout(()=>spawnCustomer(2),2000); // 다시 1초 후 세 번째 줄
+  // 2초 이동, 반도달 기준 1초 타이밍에 맞춰 순차 생성
+  const c1=spawnCustomer(1);
+  setTimeout(()=>spawnCustomer(0),1000);
+  setTimeout(()=>spawnCustomer(2),2000);
 }
 
-/* 시작 */
 startBtn.addEventListener('click',()=>{
   startOverlay.classList.add('hide');
-  startThreeLaneSequence();
+  // DOM 렌더 완료 후 시작
+  requestAnimationFrame(()=>startThreeLaneSequence());
 });
 </script>
 </body>
