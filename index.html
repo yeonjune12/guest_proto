@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>손님 시스템</title>
+<title>클릭 주문형 손님 시스템</title>
 <style>
 :root{--bg:#0f1115;--panel:#171a21;--line:#2b3242;--text:#e6e9ef;--muted:#9aa3b2;--green:#2ecc71;--orange:#ff9f43;--red:#e74c3c}
 *{box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif}
@@ -22,7 +22,7 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
 .entrance[data-lane="2"]{left:calc(50% + 50px)}
 .player{position:absolute;width:22px;height:22px;background:var(--green);border-radius:50%;left:50%;top:42%;transform:translate(-50%,-50%)}
 .customer{position:absolute;width:20px;height:20px;border-radius:50%;transition:top 2s linear,left 2s linear}
-.customer.normal{background:var(--orange);box-shadow:0 0 12px #ff9f4388}
+.customer.normal{background:var(--orange);box-shadow:0 0 12px #ff9f4388;cursor:pointer}
 .customer.trouble{background:var(--red);box-shadow:0 0 12px #e74c3c88;cursor:pointer}
 .hpbar{position:absolute;width:6px;height:24px;border:1px solid var(--line);right:-10px;top:-4px;border-radius:3px;overflow:hidden;background:#222}
 .hpfill{width:100%;height:0;background:var(--green);transition:height 0.2s}
@@ -57,7 +57,7 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
 <div class="overlay" id="startOverlay">
   <div class="modal">
     <h2>게임 시작</h2>
-    <p>카운터 앞 손님을 클릭해 주문 처리. 붉은 손님은 3회 클릭으로 진정.</p>
+    <p>손님을 클릭해야 주문을 받을 수 있습니다. 붉은 손님은 3회 클릭으로 진정.</p>
     <button class="btn primary" id="startBtn">게임 시작</button>
   </div>
 </div>
@@ -77,104 +77,43 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
 const clockEl=document.getElementById('clock');
 setInterval(()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');clockEl.textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;},1000);
 
-/* 요소 */
+/* 설정 */
+const TROUBLE_RATE=0.2;
+const SPAWN_MS=1500;
+const QUEUE_GAP=28;
 const stage=document.getElementById('stage');
 const counter=document.getElementById('counter');
 const entrances=[...document.querySelectorAll('.entrance')];
-const startBtn=document.getElementById('startBtn');
 const startOverlay=document.getElementById('startOverlay');
+const startBtn=document.getElementById('startBtn');
 const orderOverlay=document.getElementById('orderOverlay');
 const orderText=document.getElementById('orderText');
 const orderConfirm=document.getElementById('orderConfirm');
 
-/* 상수 */
-const TROUBLE_RATE=0.2;        // 진상 확률
-const SPAWN_MS=1500;           // 라인별 스폰 주기
-const QUEUE_GAP=28;            // 줄 간 간격(px)
-
-/* 상태 */
-const lanes=[[],[],[]];        // lane별 배열(앞이 index 0)
-let overlayBusy=false;         // 팝업 열림 여부
+const lanes=[[],[],[]];
+let overlayBusy=false;
 
 function getCenter(el){const r=el.getBoundingClientRect(),s=stage.getBoundingClientRect();return{x:r.left-s.left+r.width/2,y:r.top-s.top+r.height/2};}
 
-/* 타겟 좌표 계산 */
-function targetFor(lane,index){
+/* 위치 계산 */
+function targetFor(lane,i){
   const base=getCenter(counter);
-  const y=base.y + counter.offsetHeight/2 + 14 + index*QUEUE_GAP;
+  const y=base.y+counter.offsetHeight/2+14+i*QUEUE_GAP;
   const xOffsets=[-90,0,90];
-  return {x:base.x+xOffsets[lane], y};
+  return {x:base.x+xOffsets[lane],y};
 }
 
-/* 라인 재정렬 및 클릭 핸들러 갱신 */
-function layoutLane(lane){
-  lanes[lane].forEach((cust,i)=>{
-    const t=targetFor(lane,i);
-    requestAnimationFrame(()=>{ cust.style.left=(t.x-10)+'px'; cust.style.top=(t.y-10)+'px'; });
-
-    cust.onclick=null; // 초기화
-    if(i===0){ // 맨 앞
-      if(cust.classList.contains('trouble')){
-        ensureHpBar(cust); // 클릭 열기
-        cust.onclick=()=>{ // HP 누적
-          const fill=cust.querySelector('.hpfill');
-          let clicks=Number(cust.dataset.clicks||0)+1;
-          cust.dataset.clicks=String(clicks);
-          fill.style.height=(Math.min(clicks,3)/3*100)+'%';
-          if(clicks>=3){ // 정화
-            cust.classList.remove('trouble'); cust.classList.add('normal');
-            const bar=cust.querySelector('.hpbar'); if(bar) bar.remove();
-            cust.dataset.clicks='0';
-            // 정화 후에도 클릭해서 주문 팝업을 열어야 함
-            layoutLane(lane); // 핸들러 갱신
-          }
-        };
-      }else{ // 정상 손님: 클릭 시 주문 팝업
-        cust.onclick=()=>openOrder(cust,lane);
-      }
-    }else{
-      // 뒤 손님은 클릭 없음
-      cust.onclick=null;
-    }
-  });
-
-  // 붉은 손님이 앞을 막으면 뒤의 주황 손님 3초 후 감염
-  const front=lanes[lane][0];
-  if(front && front.classList.contains('trouble')){
-    for(let i=1;i<lanes[lane].length;i++){
-      const c=lanes[lane][i];
-      if(c.classList.contains('normal') && !c.dataset.blockTimer){
-        c.dataset.blockTimer = setTimeout(()=>{
-          if(!document.body.contains(c)) return;
-          if(lanes[lane][0] && lanes[lane][0].classList.contains('trouble') && c.classList.contains('normal')){
-            c.classList.remove('normal'); c.classList.add('trouble');
-            c.dataset.clicks='0';
-            ensureHpBar(c);
-            layoutLane(lane); // 뒤 손님 변환 후 앞/뒤 핸들러 갱신
-          }
-          c.dataset.blockTimer='';
-        },3000);
-      }
-    }
-  }else{
-    // 앞이 주황이면 감염 타이머 해제
-    for(const c of lanes[lane]){
-      if(c.dataset.blockTimer){ clearTimeout(c.dataset.blockTimer); c.dataset.blockTimer=''; }
-    }
-  }
-}
-
-/* HP바 보장 */
+/* HP바 생성 */
 function ensureHpBar(cust){
-  if(cust.querySelector('.hpbar')) return;
-  const bar=document.createElement('div'); bar.className='hpbar';
-  const fill=document.createElement('div'); fill.className='hpfill';
-  bar.appendChild(fill); cust.appendChild(bar);
+  if(cust.querySelector('.hpbar'))return;
+  const bar=document.createElement('div');bar.className='hpbar';
+  const fill=document.createElement('div');fill.className='hpfill';
+  bar.appendChild(fill);cust.appendChild(bar);
 }
 
-/* 주문 팝업(손님 클릭으로만 진입) */
+/* 주문 팝업 */
 function openOrder(cust,lane){
-  if(overlayBusy) return;
+  if(overlayBusy)return;
   overlayBusy=true;
   const burger=Math.random()<0.5?'불고기 버거':'치킨 버거';
   orderText.textContent=`손님이 ${burger}를 주문했다. 클릭하여 전달.`;
@@ -187,17 +126,73 @@ function openOrder(cust,lane){
   };
 }
 
-/* 퇴장 → 제거 → 라인 업데이트 */
+/* 손님 클릭 핸들러 재설정 */
+function updateHandlers(lane){
+  lanes[lane].forEach((cust,i)=>{
+    cust.onclick=null;
+    if(i===0){ // 맨 앞만 클릭 가능
+      if(cust.classList.contains('trouble')){
+        ensureHpBar(cust);
+        cust.onclick=()=>{
+          const fill=cust.querySelector('.hpfill');
+          let clicks=Number(cust.dataset.clicks||0)+1;
+          cust.dataset.clicks=clicks;
+          fill.style.height=(clicks/3*100)+'%';
+          if(clicks>=3){
+            cust.classList.remove('trouble');cust.classList.add('normal');
+            const bar=cust.querySelector('.hpbar');if(bar)bar.remove();
+            cust.dataset.clicks=0;
+            updateHandlers(lane);
+          }
+        };
+      }else{
+        cust.onclick=()=>openOrder(cust,lane);
+      }
+    }
+  });
+}
+
+/* 감염 처리 */
+function checkInfection(lane){
+  const front=lanes[lane][0];
+  if(!front)return;
+  if(front.classList.contains('trouble')){
+    for(let i=1;i<lanes[lane].length;i++){
+      const c=lanes[lane][i];
+      if(c.classList.contains('normal')&&!c.dataset.blockTimer){
+        c.dataset.blockTimer=setTimeout(()=>{
+          if(lanes[lane][0]&&lanes[lane][0].classList.contains('trouble')&&c.classList.contains('normal')){
+            c.classList.remove('normal');c.classList.add('trouble');
+            c.dataset.clicks=0;ensureHpBar(c);
+            updateHandlers(lane);
+          }
+          c.dataset.blockTimer='';
+        },3000);
+      }
+    }
+  }
+}
+
+/* 레이아웃 정렬 */
+function layoutLane(lane){
+  lanes[lane].forEach((cust,i)=>{
+    const t=targetFor(lane,i);
+    requestAnimationFrame(()=>{cust.style.left=(t.x-10)+'px';cust.style.top=(t.y-10)+'px';});
+  });
+  checkInfection(lane);
+  updateHandlers(lane);
+}
+
+/* 퇴장 */
 function sendOutCustomer(cust,lane){
   const ent=getCenter(entrances[lane]);
-  requestAnimationFrame(()=>{ cust.style.left=(ent.x-10)+'px'; cust.style.top=(ent.y-10)+'px'; });
+  requestAnimationFrame(()=>{cust.style.left=(ent.x-10)+'px';cust.style.top=(ent.y-10)+'px';});
   cust.addEventListener('transitionend',function done(){
     cust.removeEventListener('transitionend',done);
-    // 배열에서 제거
     const idx=lanes[lane].indexOf(cust);
-    if(idx>=0) lanes[lane].splice(idx,1);
+    if(idx>=0)lanes[lane].splice(idx,1);
     cust.remove();
-    layoutLane(lane); // 남은 손님 앞으로 전진
+    layoutLane(lane);
   },{once:true});
 }
 
@@ -206,35 +201,26 @@ function spawnCustomer(lane){
   const cust=document.createElement('div');
   const isTrouble=Math.random()<TROUBLE_RATE;
   cust.className='customer '+(isTrouble?'trouble':'normal');
-  cust.dataset.lane=lane; cust.dataset.clicks='0';
-  const ent=getCenter(entrances[lane]);
-  cust.style.left=(ent.x-10)+'px'; cust.style.top=(ent.y-10)+'px';
+  cust.dataset.clicks=0;
   stage.appendChild(cust);
-
-  // 큐에 추가하고 자리로 이동
+  const ent=getCenter(entrances[lane]);
+  cust.style.left=(ent.x-10)+'px';cust.style.top=(ent.y-10)+'px';
   lanes[lane].push(cust);
-  if(isTrouble) ensureHpBar(cust);
+  if(isTrouble)ensureHpBar(cust);
   layoutLane(lane);
 }
 
-/* 초기 시퀀스 + 지속 스폰 */
+/* 시작 */
 function startAll(){
-  // 초기 3줄(가운데→왼쪽→오른쪽)
   spawnCustomer(1);
-  setTimeout(()=>spawnCustomer(0),1000);
-  setTimeout(()=>spawnCustomer(2),2000);
-
-  // 주기적 스폰으로 병목 누적
-  setInterval(()=>spawnCustomer(0),SPAWN_MS);
-  setInterval(()=>spawnCustomer(1),SPAWN_MS);
-  setInterval(()=>spawnCustomer(2),SPAWN_MS);
+  setTimeout(()=>spawnCustomer(0),800);
+  setTimeout(()=>spawnCustomer(2),1600);
+  setInterval(()=>spawnCustomer(0),1500);
+  setInterval(()=>spawnCustomer(1),1500);
+  setInterval(()=>spawnCustomer(2),1500);
 }
 
-/* 시작 */
-startBtn.addEventListener('click',()=>{
-  startOverlay.classList.add('hide');
-  requestAnimationFrame(()=>startAll());
-});
+startBtn.onclick=()=>{startOverlay.classList.add('hide');startAll();};
 </script>
 </body>
 </html>
