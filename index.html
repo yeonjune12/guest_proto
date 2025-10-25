@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>손님 시스템 프로토타입</title>
+<title>햄버거 가게 프로토타입</title>
 <style>
 :root{
   --bg:#0f1115; --panel:#171a21; --line:#2b3242; --text:#e6e9ef;
-  --muted:#9aa3b2; --accent:#7cd1ff; --green:#2ecc71; --orange:#ff9f43;
+  --muted:#9aa3b2; --green:#2ecc71; --orange:#ff9f43;
 }
 *{box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif}
 body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -17,12 +17,17 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
 .clock{font-variant-numeric:tabular-nums;color:var(--muted)}
 .stage{width:100%;max-width:420px;aspect-ratio:3/5;background:#0b0e13;border:1px solid var(--line);border-radius:16px;position:relative;overflow:hidden}
 .map-rect{position:absolute;inset:12px;background:#10151f;border:1px solid var(--line);border-radius:12px}
-.counter{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:70%;height:70px;background:#18202d;border:2px solid #2a3850;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.counter{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:72%;height:70px;background:#18202d;border:2px solid #2a3850;border-radius:10px;display:flex;align-items:center;justify-content:center}
 .counter::after{content:"카운터";position:absolute;bottom:-20px;color:var(--muted);font-size:12px}
-.entrance{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);width:90px;height:10px;background:#2a2f3d;border-radius:8px}
-.entrance::after{content:"입구";position:absolute;top:-18px;left:50%;transform:translateX(-50%);color:var(--muted);font-size:12px}
-.player{position:absolute;width:22px;height:22px;background:var(--green);border-radius:50%;box-shadow:0 0 10px #2ecc7188}
-.player.on-counter{left:50%;top:42%;transform:translate(-50%,-50%)}
+.entrance{position:absolute;bottom:6px;width:90px;height:10px;background:#2a2f3d;border-radius:8px}
+.entrance[data-lane="1"]{left:50%;transform:translateX(-50%);}         /* 가운데 */
+.entrance[data-lane="0"]{left:calc(50% - 110px);}                      /* 왼쪽 */
+.entrance[data-lane="2"]{left:calc(50% + 110px);}                      /* 오른쪽 */
+.entrance::after{position:absolute;top:-18px;left:50%;transform:translateX(-50%);color:var(--muted);font-size:12px}
+.entrance[data-lane="0"]::after{content:"입구 1";}
+.entrance[data-lane="1"]::after{content:"입구 2";}
+.entrance[data-lane="2"]::after{content:"입구 3";}
+.player{position:absolute;width:22px;height:22px;background:var(--green);border-radius:50%;box-shadow:0 0 10px #2ecc7188;left:50%;top:42%;transform:translate(-50%,-50%)}
 .customer{position:absolute;width:20px;height:20px;background:var(--orange);border-radius:50%;box-shadow:0 0 12px #ff9f4388;transition:top 2s linear,left 2s linear}
 .overlay{position:fixed;inset:0;background:#000000b3;display:flex;align-items:center;justify-content:center;z-index:20}
 .modal{min-width:280px;max-width:90vw;background:#141923;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
@@ -48,15 +53,17 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
   <div class="stage" id="stage">
     <div class="map-rect"></div>
     <div class="counter" id="counter"></div>
-    <div class="entrance" id="entrance"></div>
-    <div class="player on-counter" title="플레이어"></div>
+    <div class="entrance" data-lane="0"></div>
+    <div class="entrance" data-lane="1"></div>
+    <div class="entrance" data-lane="2"></div>
+    <div class="player" title="플레이어"></div>
   </div>
 
   <!-- 시작 오버레이 -->
   <div class="overlay" id="startOverlay">
     <div class="modal">
       <h2>게임 시작</h2>
-      <p>시작을 누르면 손님이 입장한다.</p>
+      <p>3개 줄 대기열. 주문은 먼저 도착한 손님부터.</p>
       <button class="btn primary" id="startBtn">게임 시작</button>
     </div>
   </div>
@@ -65,15 +72,15 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
   <div class="overlay hide" id="orderOverlay">
     <div class="modal" id="orderModal">
       <h2>주문</h2>
-      <p id="orderText">손님이 주문을 선택했다.</p>
+      <p id="orderText"></p>
       <div class="row">
-        <!-- 단일 항목만 표시 규칙에 맞춤 -->
         <button class="btn primary" id="orderConfirm">선택</button>
       </div>
     </div>
   </div>
 
 <script>
+/* 시계 */
 const clockEl = document.getElementById('clock');
 setInterval(()=>{
   const d=new Date();
@@ -81,77 +88,114 @@ setInterval(()=>{
   clockEl.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 },1000);
 
-// 좌표 계산
+/* 요소 참조 */
 const stage = document.getElementById('stage');
 const counter = document.getElementById('counter');
-const entrance = document.getElementById('entrance');
-
-function getCenter(el){
-  const r = el.getBoundingClientRect();
-  const s = stage.getBoundingClientRect();
-  return { x: r.left - s.left + r.width/2, y: r.top - s.top + r.height/2 };
-}
-
-// 게임 흐름
+const entrances = [...document.querySelectorAll('.entrance')]; // lane 0,1,2
 const startBtn = document.getElementById('startBtn');
 const startOverlay = document.getElementById('startOverlay');
 const orderOverlay = document.getElementById('orderOverlay');
 const orderText = document.getElementById('orderText');
 const orderConfirm = document.getElementById('orderConfirm');
 
-startBtn.addEventListener('click', ()=>{
-  startOverlay.classList.add('hide');
-  spawnCustomer();
+/* 좌표 헬퍼 */
+function getCenter(el){
+  const r = el.getBoundingClientRect();
+  const s = stage.getBoundingClientRect();
+  return { x: r.left - s.left + r.width/2, y: r.top - s.top + r.height/2 };
+}
+
+/* 카운터 도착 대기열(FIFO) */
+const waitingQueue = []; // {custEl, lane, burger}
+let showing = null;
+
+/* 주문 팝업 제어: 항상 먼저 도착한 손님부터 */
+function tryShowNextOrder(){
+  if (showing || waitingQueue.length===0) return;
+  const item = waitingQueue.shift(); // 먼저 도착
+  showing = item;
+  orderText.textContent = `손님이 ${item.burger}를 주문했다. 클릭하여 전달.`;
+  orderConfirm.textContent = item.burger;
+  orderOverlay.classList.remove('hide');
+}
+
+/* 주문 확정 -> 해당 라인 손님 복귀 및 제거, 같은 라인 즉시 리스폰 */
+orderConfirm.addEventListener('click', ()=>{
+  if (!showing) return;
+  orderOverlay.classList.add('hide');
+
+  const { custEl, lane } = showing;
+  const ent = getCenter(entrances[lane]);
+
+  requestAnimationFrame(()=>{
+    custEl.style.left = (ent.x - 10) + 'px';
+    custEl.style.top  = (ent.y - 10) + 'px';
+  });
+
+  custEl.addEventListener('transitionend', function leaveAndRespawn(){
+    custEl.removeEventListener('transitionend', leaveAndRespawn);
+    custEl.remove();
+    spawnCustomer(lane); // 같은 라인 새 손님
+    showing = null;
+    tryShowNextOrder();  // 다음 대기 손님 있으면 즉시 표출
+  }, { once:true });
 });
 
-function spawnCustomer(){
+/* 손님 생성 및 이동 */
+function spawnCustomer(lane){
   const cust = document.createElement('div');
   cust.className = 'customer';
   stage.appendChild(cust);
 
-  // 시작 위치: 입구 중앙
-  const ent = getCenter(entrance);
+  const ent = getCenter(entrances[lane]);
   cust.style.left = (ent.x - 10) + 'px';
   cust.style.top  = (ent.y - 10) + 'px';
 
-  // 다음 프레임에 카운터로 이동
+  // 도착 목표: 카운터 앞, 라인별 좌우 오프셋
+  const tgtBase = getCenter(counter);
+  const yOffset = counter.offsetHeight/2 + 14;
+  const xOffsets = [-90, 0, 90]; // lane 0,1,2
+  const target = { x: tgtBase.x + xOffsets[lane], y: tgtBase.y + yOffset };
+
+  // 이동 시작
   requestAnimationFrame(()=>{
-    const tgt = getCenter(counter);
-    // 카운터 앞 포인트 살짝 아래
-    const yOffset = counter.offsetHeight/2 + 14;
-    cust.style.left = (tgt.x - 10) + 'px';
-    cust.style.top  = (tgt.y + yOffset - 10) + 'px';
+    cust.style.left = (target.x - 10) + 'px';
+    cust.style.top  = (target.y - 10) + 'px';
   });
 
-  cust.addEventListener('transitionend', function arrivedAtCounter(e){
-    if(orderOverlay.classList.contains('hide')===false) return;
-    // 주문 팝업 표시. 불고기 또는 치킨 중 하나만 출력
-    const pick = Math.random() < 0.5 ? '불고기 버거' : '치킨 버거';
-    orderText.textContent = `손님이 ${pick}를 주문했다. 클릭하여 전달.`;
-    orderConfirm.textContent = pick;
-    orderOverlay.classList.remove('hide');
+  // 반도달 이벤트는 시작 직후 1초에 발생(2초 이동 고정)
+  setTimeout(()=>cust.dispatchEvent(new CustomEvent('halfway',{detail:{lane}})),1000);
 
-    // 주문 클릭 시 하행 이동
-    const confirmOnce = ()=>{
-      orderOverlay.classList.add('hide');
-      orderConfirm.removeEventListener('click', confirmOnce);
-
-      // 입구로 복귀
-      const ent2 = getCenter(entrance);
-      // 이동 시작
-      requestAnimationFrame(()=>{
-        cust.style.left = (ent2.x - 10) + 'px';
-        cust.style.top  = (ent2.y - 10) + 'px';
-      });
-
-      cust.addEventListener('transitionend', function leaveAndRemove(){
-        cust.removeEventListener('transitionend', leaveAndRemove);
-        cust.remove(); // 맵에서 사라짐
-      }, { once:true });
-    };
-    orderConfirm.addEventListener('click', confirmOnce, { once:true });
+  // 도착 처리
+  cust.addEventListener('transitionend', function arrived(){
+    cust.removeEventListener('transitionend', arrived);
+    const burger = Math.random()<0.5 ? '불고기 버거' : '치킨 버거';
+    waitingQueue.push({ custEl:cust, lane, burger });
+    tryShowNextOrder();
   }, { once:true });
+
+  return cust;
 }
+
+/* 초기 스폰 시나리오
+   1) lane 1 먼저
+   2) lane 1 이 반쯤 도달하면 lane 0 스폰
+   3) lane 0 이 반쯤 도달하면 lane 2 스폰
+*/
+function startThreeLaneSequence(){
+  const c1 = spawnCustomer(1); // 두 번째 줄(가운데) 먼저
+  const halfway1 = (e)=>{ if(e.detail?.lane===1){ c1.removeEventListener('halfway', halfway1); const c0=spawnCustomer(0);
+      const halfway0 = (e2)=>{ if(e2.detail?.lane===0){ c0.removeEventListener('halfway', halfway0); spawnCustomer(2); } };
+      c0.addEventListener('halfway', halfway0);
+    } };
+  c1.addEventListener('halfway', halfway1);
+}
+
+/* 시작 버튼 */
+startBtn.addEventListener('click', ()=>{
+  startOverlay.classList.add('hide');
+  startThreeLaneSequence();
+});
 </script>
 </body>
 </html>
