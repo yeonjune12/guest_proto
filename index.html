@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>햄버거 가게 프로토타입</title>
 <style>
-:root{--bg:#0f1115;--panel:#171a21;--line:#2b3242;--text:#e6e9ef;--muted:#9aa3b2;--green:#2ecc71;--orange:#ff9f43}
+:root{
+  --bg:#0f1115;--panel:#171a21;--line:#2b3242;--text:#e6e9ef;
+  --muted:#9aa3b2;--green:#2ecc71;--orange:#ff9f43;--red:#e74c3c
+}
 *{box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif}
 body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction:column;align-items:center;gap:12px}
 .topbar{position:sticky;top:0;width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
@@ -20,12 +23,12 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
 .entrance[data-lane="1"]{left:50%;transform:translateX(-50%)}
 .entrance[data-lane="0"]{left:calc(50% - 110px)}
 .entrance[data-lane="2"]{left:calc(50% + 50px)}
-.entrance::after{position:absolute;top:-18px;left:50%;transform:translateX(-50%);color:var(--muted);font-size:12px}
-.entrance[data-lane="0"]::after{content:"입구 1"}
-.entrance[data-lane="1"]::after{content:"입구 2"}
-.entrance[data-lane="2"]::after{content:"입구 3"}
-.player{position:absolute;width:22px;height:22px;background:var(--green);border-radius:50%;box-shadow:0 0 10px #2ecc7188;left:50%;top:42%;transform:translate(-50%,-50%)}
-.customer{position:absolute;width:20px;height:20px;background:var(--orange);border-radius:50%;box-shadow:0 0 12px #ff9f4388;transition:top 2s linear,left 2s linear}
+.player{position:absolute;width:22px;height:22px;background:var(--green);border-radius:50%;left:50%;top:42%;transform:translate(-50%,-50%)}
+.customer{position:absolute;width:20px;height:20px;border-radius:50%;transition:top 2s linear,left 2s linear}
+.customer.normal{background:var(--orange);box-shadow:0 0 12px #ff9f4388}
+.customer.trouble{background:var(--red);box-shadow:0 0 12px #e74c3c88;cursor:pointer}
+.hpbar{position:absolute;width:6px;height:24px;border:1px solid var(--line);right:-10px;top:-4px;border-radius:3px;overflow:hidden;background:#222}
+.hpfill{width:100%;height:0;background:var(--green);transition:height 0.2s}
 .overlay{position:fixed;inset:0;background:#000000b3;display:flex;align-items:center;justify-content:center;z-index:20}
 .modal{min-width:280px;max-width:90vw;background:#141923;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .modal h2{margin:0;font-size:18px}
@@ -37,45 +40,48 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
 </style>
 </head>
 <body>
-  <div class="topbar">
-    <div class="menu">
-      <span class="badge">불고기 버거</span>
-      <span class="badge">치킨 버거</span>
-    </div>
-    <div class="clock" id="clock">00:00:00</div>
+<div class="topbar">
+  <div class="menu">
+    <span class="badge">불고기 버거</span>
+    <span class="badge">치킨 버거</span>
   </div>
+  <div class="clock" id="clock">00:00:00</div>
+</div>
 
-  <div class="stage" id="stage">
-    <div class="map-rect"></div>
-    <div class="counter" id="counter"></div>
-    <div class="entrance" data-lane="0"></div>
-    <div class="entrance" data-lane="1"></div>
-    <div class="entrance" data-lane="2"></div>
-    <div class="player"></div>
-  </div>
+<div class="stage" id="stage">
+  <div class="map-rect"></div>
+  <div class="counter" id="counter"></div>
+  <div class="entrance" data-lane="0"></div>
+  <div class="entrance" data-lane="1"></div>
+  <div class="entrance" data-lane="2"></div>
+  <div class="player"></div>
+</div>
 
-  <div class="overlay" id="startOverlay">
-    <div class="modal">
-      <h2>게임 시작</h2>
-      <p>세 줄 손님이 순차적으로 등장합니다.</p>
-      <button class="btn primary" id="startBtn">게임 시작</button>
+<div class="overlay" id="startOverlay">
+  <div class="modal">
+    <h2>게임 시작</h2>
+    <p>일반 손님과 진상 손님이 등장합니다.</p>
+    <button class="btn primary" id="startBtn">게임 시작</button>
+  </div>
+</div>
+
+<div class="overlay hide" id="orderOverlay">
+  <div class="modal">
+    <h2>주문</h2>
+    <p id="orderText"></p>
+    <div class="row">
+      <button class="btn primary" id="orderConfirm">선택</button>
     </div>
   </div>
-
-  <div class="overlay hide" id="orderOverlay">
-    <div class="modal">
-      <h2>주문</h2>
-      <p id="orderText"></p>
-      <div class="row">
-        <button class="btn primary" id="orderConfirm">선택</button>
-      </div>
-    </div>
-  </div>
+</div>
 
 <script>
+/* 시계 */
 const clockEl=document.getElementById('clock');
 setInterval(()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');clockEl.textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;},1000);
 
+/* 상수 */
+const TROUBLE_RATE=0.2; // 20% 확률로 진상 손님 생성
 const stage=document.getElementById('stage');
 const counter=document.getElementById('counter');
 const entrances=[...document.querySelectorAll('.entrance')];
@@ -88,7 +94,6 @@ const orderConfirm=document.getElementById('orderConfirm');
 function getCenter(el){const r=el.getBoundingClientRect(),s=stage.getBoundingClientRect();return{x:r.left-s.left+r.width/2,y:r.top-s.top+r.height/2};}
 
 const waitingQueue=[];let showing=null;
-
 function tryShowNextOrder(){
   if(showing||waitingQueue.length===0)return;
   const item=waitingQueue.shift();
@@ -97,28 +102,34 @@ function tryShowNextOrder(){
   orderConfirm.textContent=item.burger;
   orderOverlay.classList.remove('hide');
 }
-
 orderConfirm.addEventListener('click',()=>{
   if(!showing)return;
   orderOverlay.classList.add('hide');
   const {custEl,lane}=showing;
-  const ent=getCenter(entrances[lane]);
-  requestAnimationFrame(()=>{
-    custEl.style.left=(ent.x-10)+'px';
-    custEl.style.top =(ent.y-10)+'px';
-  });
-  custEl.addEventListener('transitionend',function rm(){
-    custEl.removeEventListener('transitionend',rm);
-    custEl.remove();
-    spawnCustomer(lane); // 같은 라인 리스폰
-    showing=null;
-    tryShowNextOrder();
-  },{once:true});
+  sendOutCustomer(custEl,lane);
+  showing=null;
+  tryShowNextOrder();
 });
 
+/* 손님 이동 후 퇴장 */
+function sendOutCustomer(cust,lane){
+  const ent=getCenter(entrances[lane]);
+  requestAnimationFrame(()=>{
+    cust.style.left=(ent.x-10)+'px';
+    cust.style.top =(ent.y-10)+'px';
+  });
+  cust.addEventListener('transitionend',function rm(){
+    cust.removeEventListener('transitionend',rm);
+    cust.remove();
+    spawnCustomer(lane);
+  },{once:true});
+}
+
+/* 손님 생성 */
 function spawnCustomer(lane){
   const cust=document.createElement('div');
-  cust.className='customer';
+  const isTrouble=Math.random()<TROUBLE_RATE;
+  cust.className='customer '+(isTrouble?'trouble':'normal');
   stage.appendChild(cust);
 
   const ent=getCenter(entrances[lane]);
@@ -130,32 +141,93 @@ function spawnCustomer(lane){
   const xOffsets=[-90,0,90];
   const target={x:tgtBase.x+xOffsets[lane],y:tgtBase.y+yOffset};
 
-  // 이동은 한 프레임 뒤에 시작 (브라우저 레이아웃 보장)
+  // 이동 시작
   requestAnimationFrame(()=>{requestAnimationFrame(()=>{
     cust.style.left=(target.x-10)+'px';
     cust.style.top =(target.y-10)+'px';
   });});
 
+  // 카운터 도착 처리
   cust.addEventListener('transitionend',function arrived(){
     cust.removeEventListener('transitionend',arrived);
-    const burger=Math.random()<0.5?'불고기 버거':'치킨 버거';
-    waitingQueue.push({custEl:cust,lane,burger});
-    tryShowNextOrder();
+    if(cust.classList.contains('trouble')){
+      handleTroubleAtCounter(cust,lane);
+    }else{
+      const burger=Math.random()<0.5?'불고기 버거':'치킨 버거';
+      waitingQueue.push({custEl:cust,lane,burger});
+      tryShowNextOrder();
+    }
   },{once:true});
-  return cust;
 }
 
-// 초기 3줄 시퀀스
+/* 진상 손님 도착 시 */
+function handleTroubleAtCounter(cust,lane){
+  cust.dataset.blocking='true';
+  // 체력 게이지 생성
+  cust.addEventListener('click',()=>openHpBar(cust,lane),{once:true});
+  // 이후 도착하는 주황 손님 감지용
+}
+
+/* 진상 손님 클릭 시 체력바 표시 */
+function openHpBar(cust,lane){
+  const bar=document.createElement('div');
+  bar.className='hpbar';
+  const fill=document.createElement('div');
+  fill.className='hpfill';
+  bar.appendChild(fill);
+  cust.appendChild(bar);
+
+  let clicks=0;
+  cust.addEventListener('click',()=>{
+    clicks++;
+    fill.style.height=(clicks/3*100)+'%';
+    if(clicks>=3){
+      convertToNormal(cust,lane,bar);
+    }
+  });
+}
+
+/* 진상 → 일반 전환 */
+function convertToNormal(cust,lane,bar){
+  cust.classList.remove('trouble');
+  cust.classList.add('normal');
+  bar.remove();
+  const burger=Math.random()<0.5?'불고기 버거':'치킨 버거';
+  waitingQueue.push({custEl:cust,lane,burger});
+  tryShowNextOrder();
+}
+
+/* 진상 손님이 막은 뒤 손님 변질 로직 */
+function tryCorruptWaiting(lane){
+  const blockers=[...stage.querySelectorAll('.customer.trouble[data-blocking="true"]')];
+  if(blockers.length===0)return;
+  const behind=[...stage.querySelectorAll('.customer.normal')].filter(c=>{
+    const cy=parseFloat(c.style.top)||0;
+    const bx=parseFloat(blockers[0].style.top)||0;
+    return cy>bx; // 아래쪽(뒤)
+  });
+  behind.forEach(c=>{
+    setTimeout(()=>{
+      if(document.body.contains(c)){
+        c.classList.remove('normal');
+        c.classList.add('trouble');
+        handleTroubleAtCounter(c,lane);
+      }
+    },3000);
+  });
+}
+
+/* 3줄 시작 */
 function startThreeLaneSequence(){
-  // 2초 이동, 반도달 기준 1초 타이밍에 맞춰 순차 생성
-  const c1=spawnCustomer(1);
+  spawnCustomer(1);
   setTimeout(()=>spawnCustomer(0),1000);
   setTimeout(()=>spawnCustomer(2),2000);
+  // 주기적으로 변질 감시
+  setInterval(()=>{[0,1,2].forEach(tryCorruptWaiting);},1000);
 }
 
 startBtn.addEventListener('click',()=>{
   startOverlay.classList.add('hide');
-  // DOM 렌더 완료 후 시작
   requestAnimationFrame(()=>startThreeLaneSequence());
 });
 </script>
