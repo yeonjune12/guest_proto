@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>햄버거 가게 프로토타입</title>
+<title>진상 손님 시스템 프로토타입</title>
 <style>
 :root{
   --bg:#0f1115;--panel:#171a21;--line:#2b3242;--text:#e6e9ef;
@@ -60,7 +60,7 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
 <div class="overlay" id="startOverlay">
   <div class="modal">
     <h2>게임 시작</h2>
-    <p>일반 손님과 진상 손님이 등장합니다.</p>
+    <p>진상 손님이 등장합니다. 3번 클릭하면 진정됩니다.</p>
     <button class="btn primary" id="startBtn">게임 시작</button>
   </div>
 </div>
@@ -80,8 +80,8 @@ body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction
 const clockEl=document.getElementById('clock');
 setInterval(()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');clockEl.textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;},1000);
 
-/* 상수 */
-const TROUBLE_RATE=0.2; // 20% 확률로 진상 손님 생성
+/* 기본 요소 */
+const TROUBLE_RATE=0.2;
 const stage=document.getElementById('stage');
 const counter=document.getElementById('counter');
 const entrances=[...document.querySelectorAll('.entrance')];
@@ -91,9 +91,13 @@ const orderOverlay=document.getElementById('orderOverlay');
 const orderText=document.getElementById('orderText');
 const orderConfirm=document.getElementById('orderConfirm');
 
+const lanes=[[],[],[]]; // 라인별 손님 관리
+const waitingQueue=[]; 
+let showing=null;
+
 function getCenter(el){const r=el.getBoundingClientRect(),s=stage.getBoundingClientRect();return{x:r.left-s.left+r.width/2,y:r.top-s.top+r.height/2};}
 
-const waitingQueue=[];let showing=null;
+/* 주문 표시 */
 function tryShowNextOrder(){
   if(showing||waitingQueue.length===0)return;
   const item=waitingQueue.shift();
@@ -111,7 +115,7 @@ orderConfirm.addEventListener('click',()=>{
   tryShowNextOrder();
 });
 
-/* 손님 이동 후 퇴장 */
+/* 손님 퇴장 후 리스폰 */
 function sendOutCustomer(cust,lane){
   const ent=getCenter(entrances[lane]);
   requestAnimationFrame(()=>{
@@ -121,8 +125,35 @@ function sendOutCustomer(cust,lane){
   cust.addEventListener('transitionend',function rm(){
     cust.removeEventListener('transitionend',rm);
     cust.remove();
+    lanes[lane].shift(); // 첫 번째 손님 제거
     spawnCustomer(lane);
   },{once:true});
+}
+
+/* 진상 손님 클릭 3회 → 정화 */
+function makeHpBar(cust,lane){
+  const bar=document.createElement('div');
+  bar.className='hpbar';
+  const fill=document.createElement('div');
+  fill.className='hpfill';
+  bar.appendChild(fill);
+  cust.appendChild(bar);
+  let clicks=0;
+  cust.addEventListener('click',()=>{
+    clicks++;
+    fill.style.height=(clicks/3*100)+'%';
+    if(clicks>=3){ convertToNormal(cust,lane,bar); }
+  });
+}
+
+/* 진상 → 일반 변환 */
+function convertToNormal(cust,lane,bar){
+  cust.classList.remove('trouble');
+  cust.classList.add('normal');
+  if(bar) bar.remove();
+  const burger=Math.random()<0.5?'불고기 버거':'치킨 버거';
+  waitingQueue.push({custEl:cust,lane,burger});
+  tryShowNextOrder();
 }
 
 /* 손님 생성 */
@@ -130,6 +161,7 @@ function spawnCustomer(lane){
   const cust=document.createElement('div');
   const isTrouble=Math.random()<TROUBLE_RATE;
   cust.className='customer '+(isTrouble?'trouble':'normal');
+  cust.dataset.lane=lane;
   stage.appendChild(cust);
 
   const ent=getCenter(entrances[lane]);
@@ -147,85 +179,41 @@ function spawnCustomer(lane){
     cust.style.top =(target.y-10)+'px';
   });});
 
-  // 카운터 도착 처리
   cust.addEventListener('transitionend',function arrived(){
     cust.removeEventListener('transitionend',arrived);
-    if(cust.classList.contains('trouble')){
-      handleTroubleAtCounter(cust,lane);
+    // 라인에 등록
+    lanes[lane].push(cust);
+    if(isTrouble){
+      cust.dataset.blocking='true';
+      makeHpBar(cust,lane);
     }else{
-      const burger=Math.random()<0.5?'불고기 버거':'치킨 버거';
-      waitingQueue.push({custEl:cust,lane,burger});
-      tryShowNextOrder();
+      // 앞에 진상 손님이 있으면 3초 후 감염
+      if(lanes[lane].length>1 && lanes[lane][0].dataset.blocking==='true'){
+        setTimeout(()=>{
+          if(document.body.contains(cust)&&cust.classList.contains('normal')){
+            cust.classList.remove('normal');
+            cust.classList.add('trouble');
+            cust.dataset.blocking='true';
+            makeHpBar(cust,lane);
+          }
+        },3000);
+      }else{
+        const burger=Math.random()<0.5?'불고기 버거':'치킨 버거';
+        waitingQueue.push({custEl:cust,lane,burger});
+        tryShowNextOrder();
+      }
     }
   },{once:true});
 }
 
-/* 진상 손님 도착 시 */
-function handleTroubleAtCounter(cust,lane){
-  cust.dataset.blocking='true';
-  // 체력 게이지 생성
-  cust.addEventListener('click',()=>openHpBar(cust,lane),{once:true});
-  // 이후 도착하는 주황 손님 감지용
-}
-
-/* 진상 손님 클릭 시 체력바 표시 */
-function openHpBar(cust,lane){
-  const bar=document.createElement('div');
-  bar.className='hpbar';
-  const fill=document.createElement('div');
-  fill.className='hpfill';
-  bar.appendChild(fill);
-  cust.appendChild(bar);
-
-  let clicks=0;
-  cust.addEventListener('click',()=>{
-    clicks++;
-    fill.style.height=(clicks/3*100)+'%';
-    if(clicks>=3){
-      convertToNormal(cust,lane,bar);
-    }
-  });
-}
-
-/* 진상 → 일반 전환 */
-function convertToNormal(cust,lane,bar){
-  cust.classList.remove('trouble');
-  cust.classList.add('normal');
-  bar.remove();
-  const burger=Math.random()<0.5?'불고기 버거':'치킨 버거';
-  waitingQueue.push({custEl:cust,lane,burger});
-  tryShowNextOrder();
-}
-
-/* 진상 손님이 막은 뒤 손님 변질 로직 */
-function tryCorruptWaiting(lane){
-  const blockers=[...stage.querySelectorAll('.customer.trouble[data-blocking="true"]')];
-  if(blockers.length===0)return;
-  const behind=[...stage.querySelectorAll('.customer.normal')].filter(c=>{
-    const cy=parseFloat(c.style.top)||0;
-    const bx=parseFloat(blockers[0].style.top)||0;
-    return cy>bx; // 아래쪽(뒤)
-  });
-  behind.forEach(c=>{
-    setTimeout(()=>{
-      if(document.body.contains(c)){
-        c.classList.remove('normal');
-        c.classList.add('trouble');
-        handleTroubleAtCounter(c,lane);
-      }
-    },3000);
-  });
-}
-
-/* 3줄 시작 */
+/* 초기 3줄 생성 */
 function startThreeLaneSequence(){
   spawnCustomer(1);
   setTimeout(()=>spawnCustomer(0),1000);
   setTimeout(()=>spawnCustomer(2),2000);
-  // 주기적으로 변질 감시
-  setInterval(()=>{[0,1,2].forEach(tryCorruptWaiting);},1000);
 }
 
+/* 시작 */
 startBtn.addEventListener('click',()=>{
   startOverlay.classList.add('hide');
   requestAnimationFrame(()=>startThreeLaneSequence());
